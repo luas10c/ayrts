@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs'
 import json5 from 'json5'
+import path from 'path'
 
 export type TSConfig = {
   compilerOptions: {
@@ -11,6 +12,7 @@ export type TSConfig = {
     baseUrl?: string
     paths?: { [key: string]: string[] }
     outDir?: string
+    strict?: boolean
   }
 }
 
@@ -24,13 +26,14 @@ export type SWCConfig = {
     }
     baseUrl?: string
     paths?: { [key: string]: string[] }
-  }
-  transform?: {
-    legacyDecorator?: boolean
-    decoratorMetadata?: boolean
+    transform?: {
+      legacyDecorator?: boolean
+      decoratorMetadata?: boolean
+    }
   }
   outputPath?: string
   module?: {
+    strict?: boolean
     type?: string
   }
   sourceMaps?: boolean
@@ -76,7 +79,17 @@ function convertTSConfigToSWCConfig(tsconfig: TSConfig): SWCConfig {
   updateSwcSourceMap(swcConfig, tsconfig)
   updateSwcModuleType(swcConfig, tsconfig)
   updateSwcExperimentalDecorators(swcConfig, tsconfig)
+  updateSwcStrict(swcConfig, tsconfig)
   return swcConfig
+}
+
+function updateSwcStrict(swcConfig: SWCConfig, tsconfig: TSConfig) {
+  if (tsconfig.compilerOptions.strict) {
+    if (!swcConfig.module) {
+      swcConfig.module = {}
+    }
+    swcConfig.module.strict = true
+  }
 }
 
 function updateSwcOutputPath(swcConfig: SWCConfig, tsconfig: TSConfig) {
@@ -87,7 +100,9 @@ function updateSwcOutputPath(swcConfig: SWCConfig, tsconfig: TSConfig) {
 
 function updateSwcPaths(swcConfig: SWCConfig, tsconfig: TSConfig) {
   if (tsconfig.compilerOptions.baseUrl) {
-    swcConfig.jsc.baseUrl = tsconfig.compilerOptions.baseUrl
+    swcConfig.jsc.baseUrl = path.resolve(tsconfig.compilerOptions.baseUrl)
+  } else {
+    swcConfig.jsc.baseUrl = path.resolve('.')
   }
 
   if (tsconfig.compilerOptions.paths) {
@@ -113,6 +128,9 @@ function updateSwcTarget(swcConfig: SWCConfig, tsconfig: TSConfig) {
 
 function updateSwcExperimentalDecorators(swcConfig: SWCConfig, tsconfig: TSConfig) {
   if (tsconfig.compilerOptions.experimentalDecorators) {
+    if (!swcConfig.jsc) {
+      swcConfig.jsc = {}
+    }
     if (!swcConfig.jsc.parser) {
       swcConfig.jsc.parser = {}
     }
@@ -120,14 +138,17 @@ function updateSwcExperimentalDecorators(swcConfig: SWCConfig, tsconfig: TSConfi
   }
 
   if (tsconfig.compilerOptions.emitDecoratorMetadata) {
-    if (!swcConfig.transform) {
-      swcConfig.transform = {}
+    if (!swcConfig.jsc) {
+      swcConfig.jsc = {}
     }
-    swcConfig.transform.decoratorMetadata = true
+    if (!swcConfig.jsc.transform) {
+      swcConfig.jsc.transform = {}
+    }
+    swcConfig.jsc.transform.decoratorMetadata = true
   }
 
-  if (swcConfig.transform?.decoratorMetadata && swcConfig.jsc.parser?.decorators) {
-    swcConfig.transform.legacyDecorator = true
+  if (swcConfig.jsc.transform?.decoratorMetadata && swcConfig.jsc.parser?.decorators) {
+    swcConfig.jsc.transform.legacyDecorator = true
   }
 }
 
