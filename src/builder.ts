@@ -5,26 +5,19 @@ import path from 'node:path'
 import chalk from 'chalk'
 import * as emoji from 'node-emoji'
 
-import { terminal } from './utils/terminal.js'
+import { clearTerminal } from './utils/terminal.js'
 
-import { constants } from './config/constants.js'
+import { SwcOptions, swcBuild } from './builders/swc.js'
 
-import { swc } from './builders/swc.js'
+import { pids } from './store/pids.js'
+import { workingDirectory } from './utils/runtime.js'
+import { SWCConfig } from './utils/tsconfig-to-swc.js'
+import { AyrtsOptions } from './cli.js'
 
-import { pids } from './config/pids.js'
+async function* scan(entrypointPath: string) {
+  const baseUrl = path.dirname(entrypointPath)
 
-async function* scan() {
-  const entrypoint = process.argv
-    .filter((item) => item.match(/(?:js|ts)/))
-    .join()
-    .split(',')
-    .at(1)!
-    .split('/')
-    .at(0)!
-
-  const pathname = path.resolve(path.join(constants.relativePath, entrypoint))
-
-  const allPaths = await readdir(pathname, {
+  const allPaths = await readdir(baseUrl, {
     recursive: true
   })
 
@@ -33,12 +26,12 @@ async function* scan() {
       continue
     }
 
-    const info = await stat(path.resolve(path.join(pathname, pathItem)))
+    const info = await stat(path.resolve(path.join(baseUrl, pathItem)))
 
     if (info.isDirectory()) {
       yield {
         isFile: false,
-        entrypoint,
+        baseUrl,
         path: pathItem
       }
     }
@@ -50,27 +43,36 @@ async function* scan() {
 
     yield {
       isFile: info.isFile(),
-      entrypoint,
+      baseUrl,
       path: pathItem
     }
   }
 }
 
-export async function builder() {
+export async function builder(
+  entrypointPath: string,
+  ayrtsOptions: AyrtsOptions,
+  config?: SWCConfig
+) {
+  const entrypoint = path.basename(entrypointPath)
+
+  const distEntrypoint = entrypoint.replace(/\.ts$/, '.js')
+
+  const outDir = path.join(workingDirectory, config?.outputPath ?? 'dist')
+
   const start = performance.now()
 
   try {
-    terminal.clear()
-    await rimraf(path.join(constants.relativePath, 'dist'))
-    await mkdir(path.join(constants.relativePath, 'dist'))
+    clearTerminal()
+    await rimraf(outDir)
+    await mkdir(outDir)
 
-    for await (const item of scan()) {
+    for await (const item of scan(entrypointPath)) {
       if (!item.isFile) {
-        await mkdir(path.join(constants.relativePath, 'dist', item.path))
+        await mkdir(path.join(outDir, item.path))
         continue
       }
-
-      await swc.build(item)
+      await swcBuild(item, config as SwcOptions)
     }
 
     for (const pid of pids.values()) {
@@ -81,22 +83,22 @@ export async function builder() {
       pids.delete(pid)
     }
 
-    const { pid } = fork(path.join(constants.relativePath, 'dist', 'main.js'))
+    const { pid } = fork(path.join(outDir, distEntrypoint))
     if (pid) {
       pids.add(pid)
     }
 
     const end = performance.now()
 
-    console.log(
-      chalk.green(
-        `${emoji.get('heavy_check_mark')} Ready in ${Math.round(end - start)}ms`
+    if (!ayrtsOptions.quiet) {
+      console.log(
+        chalk.green(
+          `${emoji.get('heavy_check_mark')} Ready in ${Math.round(end - start)}ms`
+        )
       )
-    )
+    }
   } catch (error) {
     console.log(chalk.red(`${emoji.get('heavy_multiplication_x')} Failed to compile`))
     console.log(error)
   }
 }
-
-export default builder

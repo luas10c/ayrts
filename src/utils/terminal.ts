@@ -1,9 +1,3 @@
-function clear() {
+export function clearTerminal() {
   process.stdout.write('\x1bc')
 }
-
-export const terminal = {
-  clear
-}
-
-export default terminal

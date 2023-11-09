@@ -1,51 +1,81 @@
-import { transformFile } from '@swc/core'
+import { transformFile, Options } from '@swc/core'
 import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { workingDirectory } from '../utils/runtime.js'
+import debugLib from 'debug'
 
-import constants from '../config/constants.js'
+const debug = debugLib('ayrts:swc')
+
+export type SwcOptions = Options
 
 interface Item {
-  entrypoint: string
+  baseUrl: string
   path: string
 }
 
-async function build(item: Item) {
-  try {
-    const { code } = await transformFile(
-      path.join(constants.relativePath, item.entrypoint, item.path),
-      {
-        jsc: {
-          baseUrl: path.join(constants.relativePath, item.entrypoint),
-          parser: {
-            syntax: 'typescript',
-            decorators: true,
-            tsx: false
-          },
-          target: 'es2021',
-          paths: {
-            '#/*': ['./src/*'],
-            '@/*': ['./src/*']
-          }
-        },
-        module: {
-          strict: true,
-          type: 'es6'
+const defaultOptions = Object.freeze<Options>({
+  jsc: {
+    parser: {
+      syntax: 'typescript',
+      decorators: true,
+      tsx: false
+    },
+    target: 'es2021',
+    paths: {
+      '#/*': ['./src/*'],
+      '@/*': ['./src/*']
+    }
+  },
+  module: {
+    strict: true,
+    type: 'es6'
+  }
+})
+
+function mergeOptions<T>(target: T, source: Partial<T>): T {
+  const destination = structuredClone(target)
+  for (const property in source) {
+    if (source.hasOwnProperty(property)) {
+      const sourceProperty = source[property]
+      if (
+        sourceProperty &&
+        typeof sourceProperty === 'object' &&
+        !Array.isArray(sourceProperty) &&
+        sourceProperty !== null
+      ) {
+        destination[property] = mergeOptions(target[property], sourceProperty)
+      } else {
+        if (sourceProperty !== undefined) {
+          destination[property] = sourceProperty
         }
       }
+    }
+  }
+  return destination
+}
+
+export async function swcBuild(item: Item, options?: SwcOptions) {
+  try {
+    let transformFileOptions = options
+
+    if (!transformFileOptions) {
+      transformFileOptions = mergeOptions(defaultOptions, {
+        jsc: {
+          baseUrl: item.baseUrl
+        }
+      })
+    }
+
+    const { code } = await transformFile(
+      path.join(item.baseUrl, item.path),
+      transformFileOptions
     )
 
     const { dir, name } = path.parse(item.path)
 
-    console.log(
-      'Arquivo transpilado',
-      path.join(constants.relativePath, 'dist', dir, `${name}.js`)
-    )
-    await writeFile(path.join(constants.relativePath, 'dist', dir, `${name}.js`), code)
+    const outDir = path.join(workingDirectory, options?.outputPath || 'dist')
+
+    debug('File transpiled', path.join(outDir, dir, `${name}.js`))
+    await writeFile(path.join(outDir, dir, `${name}.js`), code)
   } catch {}
 }
-
-export const swc = {
-  build
-}
-
-export default swc
