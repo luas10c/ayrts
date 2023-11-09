@@ -176,15 +176,19 @@ function safelyParseJSON(jsonString: string): TSConfig | null {
   }
 }
 
-export function tsconfigToSWCConfig(tsconfigPath: string): SWCConfig | undefined {
+export function tsconfigToSWCConfig(tsconfigPath: string): {
+  tsconfig?: TSConfig
+  swcconfig?: SWCConfig
+} {
   try {
     const tsconfigRaw = readFileSync(tsconfigPath, { encoding: 'utf8' })
     const tsconfig = safelyParseJSON(tsconfigRaw)
     if (tsconfig) {
-      return convertTSConfigToSWCConfig(tsconfig)
+      const swcconfig = convertTSConfigToSWCConfig(tsconfig)
+      return { tsconfig, swcconfig }
     }
   } catch (error) {
     console.error('Error reading file:', error)
   }
-  return swcDefaultConfig
+  return { swcconfig: swcDefaultConfig }
 }

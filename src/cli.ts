@@ -4,7 +4,7 @@ import { program } from 'commander'
 import { builder } from './builder.js'
 import { watch } from './watch.js'
 import path from 'path'
-import { tsconfigToSWCConfig } from './utils/tsconfig-to-swc.js'
+import { SWCConfig, TSConfig, tsconfigToSWCConfig } from './utils/tsconfig-to-swc.js'
 import { workingDirectory } from './utils/runtime.js'
 
 export interface AyrtsOptions {
@@ -12,25 +12,45 @@ export interface AyrtsOptions {
   quiet: boolean
   entrypoint: string
   args: string[]
+  resolved?: {
+    baseUrl?: string
+  }
+}
+
+function resolveAyrtsOptions(
+  ayrtsOptions: AyrtsOptions,
+  config: {
+    tsconfig?: TSConfig | undefined
+    swcconfig?: SWCConfig | undefined
+  }
+) {
+  if (!ayrtsOptions.resolved) {
+    ayrtsOptions.resolved = {}
+  }
+  ayrtsOptions.resolved.baseUrl = config.tsconfig?.compilerOptions?.baseUrl ?? '.'
 }
 
 async function handler(ayrtsOptions: AyrtsOptions) {
   const entrypoint = ayrtsOptions.args[0]
 
-  const config = tsconfigToSWCConfig('tsconfig.json')
-
-  console.log(config)
-
   if (!entrypoint) {
     throw new Error('Entrypoint not provided')
   }
 
+  const config = tsconfigToSWCConfig('tsconfig.json')
+
+  if (!config) {
+    throw new Error('Error parsing tsconfig')
+  }
+
+  resolveAyrtsOptions(ayrtsOptions, config)
+
   const entrypointPath = path.resolve(path.join(workingDirectory, entrypoint))
 
-  await builder(entrypointPath, ayrtsOptions, config)
+  await builder(entrypointPath, ayrtsOptions, config.swcconfig)
 
   if (ayrtsOptions.watch) {
-    await watch(entrypointPath, ayrtsOptions, config)
+    await watch(entrypointPath, ayrtsOptions, config.swcconfig)
   }
 }
 

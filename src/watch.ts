@@ -22,9 +22,11 @@ export async function watch(
 
   const distEntrypoint = entrypoint.replace(/\.ts$/, '.js')
 
-  const outDir = path.join(workingDirectory, config?.outputPath || 'dist')
+  const outDir = path.join(workingDirectory, config?.outputPath ?? 'dist')
 
-  const watcher = chokidar.watch(entrypointPath)
+  const baseUrl = path.dirname(ayrtsOptions.resolved?.baseUrl ?? '.')
+
+  const watcher = chokidar.watch(baseUrl)
 
   async function update(entrypointPath: string) {
     const start = performance.now()
